@@ -1,0 +1,28 @@
+name: Native cancellation unit regressions
+on:
+  push:
+    branches: [fix/native-order-cancellation]
+  pull_request:
+    branches: [staging-fa1aca8a]
+    paths:
+      - ury/ury/doctype/ury_order/ury_order.py
+      - ury/ury/doctype/ury_order/test_cancel_order_workflow_unit.py
+      - .github/workflows/cancel-order-unit.yml
+permissions: {}
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the exact public source commit without credentials
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git init --quiet
+          git remote add origin "https://github.com/${SOURCE_REPOSITORY}.git"
+          git fetch --quiet --depth=1 origin "$SOURCE_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+      - name: Run cancellation unit regressions without a database
+        run: python3 -B -m unittest discover -s ury/ury/doctype/ury_order -p test_cancel_order_workflow_unit.py
