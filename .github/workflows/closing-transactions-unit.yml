@@ -1,0 +1,29 @@
+name: Server closing unit regressions
+on:
+  push:
+    branches: [fix/native-closing-transactions]
+  pull_request:
+    branches: [staging-fa1aca8a]
+    paths:
+      - ury/hooks.py
+      - ury/ury/hooks/ury_pos_closing_entry.py
+      - tests/**
+      - .github/workflows/closing-transactions-unit.yml
+permissions: {}
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the exact public source commit without credentials
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git init --quiet
+          git remote add origin "https://github.com/${SOURCE_REPOSITORY}.git"
+          git fetch --quiet --depth=1 origin "$SOURCE_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+      - name: Run closing accounting unit regressions without a database
+        run: python3 -B -m unittest discover -s tests -p test_server_closing_unit.py
