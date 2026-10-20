@@ -1906,9 +1906,10 @@ def cancel_order(invoice_id, reason):
                 frappe.PermissionError,
             )
 
-    # Release the full merge cluster, not only the primary table and CSV partners.
-    if pos_invoice.restaurant_table:
-        release_merge_cluster_tables(pos_invoice.restaurant_table)
+    if pos_invoice.docstatus not in (0, 1):
+        frappe.throw(_("Only draft or submitted invoices can be cancelled."))
+    if not isinstance(reason, str) or not reason.strip():
+        frappe.throw(_("A cancellation reason is required."))
 
     try:
         cancel_kot(invoice_id)
@@ -1917,27 +1918,24 @@ def cancel_order(invoice_id, reason):
         # If an exception occurs (e.g., "kot" app not found), it will be caught here without effecting execution
         pass
 
-    # Use standard Frappe cancel workflow instead of raw SQL
-    pos_invoice.db_set("cancel_reason", reason)
-    pos_invoice.cancel()
+    pos_invoice.db_set("cancel_reason", reason.strip())
     if pos_invoice.docstatus == 1:
         # Submitted invoice: cancel through the standard document workflow so
         # on_cancel hooks run and GL/payment reversals and audit entries are
         # produced (docstatus=2 on the invoice and its items).
         pos_invoice.cancel()
-        pos_invoice.db_set("cancel_reason", reason)
     else:
-        # Draft invoice: Frappe's standard workflow does not allow cancelling
-        # drafts, so update the status directly as before.
-        frappe.db.sql("""
-            UPDATE `tabPOS Invoice Item`
-            SET docstatus = 2
-            WHERE parent = %s
-        """, (invoice_id,))
+        # Frappe cannot transition a draft directly to Cancelled. The invoice's
+        # explicit cancel permission above authorizes this exact same-branch
+        # draft discard, without granting general Desk delete access. Keep the
+        # native hooks, link checks and recoverable Deleted Document audit,
+        # including cancel_reason and all invoice children.
+        frappe.delete_doc("POS Invoice", invoice_id, ignore_permissions=True, delete_permanently=False)
 
-        frappe.db.set_value("POS Invoice", invoice_id, "docstatus", 2)
-        frappe.db.set_value("POS Invoice", invoice_id, "status", "Cancelled")
-        frappe.db.set_value("POS Invoice", invoice_id, "cancel_reason", reason)
+    # This helper commits. Never release tables before the native lifecycle
+    # succeeds, otherwise a rejected cancellation would still free the table.
+    if pos_invoice.restaurant_table:
+        release_merge_cluster_tables(pos_invoice.restaurant_table)
 
 # Roles permitted to authorize an additional discount when settling an order.
 DISCOUNT_ALLOWED_ROLES = frozenset(
