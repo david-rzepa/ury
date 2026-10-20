@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ClipboardList, Loader2, UtensilsCrossed } from 'lucide-react';
 import { Button, Spinner, cn, showToast } from '@ury/ui';
 import { formatCurrency } from '@ury/core';
+import { t } from '../../i18n';
 import { usePOSStore } from '../../store/pos-store';
 import { useRootStore, RootState } from '../../store/root-store';
 import {
@@ -375,14 +376,14 @@ export default function CaptainOrder() {
 
       {!canModify && (
         <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-3">
-          <span className="text-sm font-medium text-gray-700">Pax</span>
+          <span className="text-sm font-medium text-gray-700">{t('cart.pax')}</span>
           <span className="text-sm text-gray-900">{noOfPax}</span>
         </div>
       )}
 
       {canModify && (
         <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-3">
-          <span className="text-sm font-medium text-gray-700">Pax</span>
+          <span className="text-sm font-medium text-gray-700">{t('cart.pax')}</span>
           <div className="flex items-center gap-3">
             <Button
               onClick={() => setNoOfPax(Math.max(MIN_PAX, noOfPax - 1))}
