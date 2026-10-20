@@ -13,6 +13,18 @@ def populate_server_closing(doc, method=None):
     if doc.docstatus == 2 or (previous and previous.docstatus == 1):
         return
     opening = frappe.get_doc("POS Opening Entry", doc.pos_opening_entry, for_update=True)
+    # Native consolidation queues ten or more invoices while the opening is
+    # still Open. The opening lock alone cannot prevent a subsequent close.
+    # A locked current read also catches committed drafts and Failed closings;
+    # neither may be silently bypassed by starting another accounting attempt.
+    pending = frappe.db.sql(
+        """SELECT name FROM `tabPOS Closing Entry`
+        WHERE pos_opening_entry=%s AND name<>%s AND docstatus IN (0, 1)
+        ORDER BY name FOR UPDATE""",
+        (opening.name, doc.name or ""),
+    )
+    if pending:
+        frappe.throw("An existing closing for this shift must be resolved first.")
     profile = frappe.get_doc("POS Profile", opening.pos_profile)
     opening.check_permission("read")
     profile.check_permission("read")

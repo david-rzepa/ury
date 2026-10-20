@@ -11,7 +11,11 @@ the authenticated cashier's submitted Open opening and matching profile/company.
 Only counted payment amounts are retained from the UI; invoice references and
 financial totals are replaced. Locked current reads include invoice children;
 normal native document permissions and the existing URY multi-cashier hooks stay
-in effect. Opening-row locking makes a second close re-read the Closed status.
+in effect. Under the opening lock, a locked current read refuses other draft/submitted
+closings, including Queued and Failed attempts. This also blocks duplicate
+accounting while native asynchronous consolidation leaves the opening Open.
+The current draft may still be submitted; cancelled historical attempts do not
+block a fresh closing.
 The server end time also supplies the posting date and time.
 
 The builder arithmetic follows ERPNext

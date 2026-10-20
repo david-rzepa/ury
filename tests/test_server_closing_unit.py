@@ -23,6 +23,8 @@ class Doc(dict):
         return self.get(name)
     def __setattr__(self, name, value):
         self[name] = value
+    def set_status(self, *, update, status):
+        self.status=status
     def set(self, name, value):
         self[name] = value
     def as_dict(self):
@@ -62,6 +64,7 @@ class ClosingTests(unittest.TestCase):
             closing_amount=50, custom_closing_amount=0, expected_amount=9000)])
         self.locks = []
         self.query_count = 0
+        self.existing_closings = []
         self.after_lock = None
         self.frappe = SimpleNamespace(db=SimpleNamespace(sql=self.sql),
             utils=SimpleNamespace(get_datetime=self.datetime), _dict=Doc,
@@ -93,6 +96,11 @@ class ClosingTests(unittest.TestCase):
             return self.profile
         return self.invoices[name]
     def sql(self, query, args, **kwargs):
+        if '`tabPOS Closing Entry`' in query:
+            self.assertIn('FOR UPDATE',query)
+            opening,name=args
+            return [(d.name,) for d in self.existing_closings if d.pos_opening_entry==opening
+                    and d.name!=name and d.docstatus in (0,1)]
         self.query_count += 1
         if len(args)==2:
             user,profile=args
@@ -208,6 +216,36 @@ class ClosingTests(unittest.TestCase):
         exec(compile(ast.Module(body=[submit],type_ignores=[]),str(NATIVE),'exec'),namespace)
         namespace['on_submit'](self.doc)
         self.assertEqual(received,[(('STG00002','STG00003'),self.doc)])
+    def test_native_queued_consolidation_leaves_open_shift_but_blocks_second_close(self):
+        for index in range(8):
+            invoice=copy.deepcopy(self.invoices['STG00002'])
+            invoice.name=f'QUEUE-{index}'
+            self.invoices[invoice.name]=invoice
+        self.populate(self.doc)
+        queued=[]
+        namespace={'frappe':SimpleNamespace(flags=SimpleNamespace(in_test=False)),
+            'get_invoice_customer_map':lambda rows:tuple(row.pos_invoice for row in rows),
+            'create_merge_logs':lambda *args:self.fail('Ten invoices should queue'),
+            'enqueue_job':lambda *args,**kwargs:queued.append(kwargs)}
+        load_functions(ROOT/'tests/fixtures/erpnext_pos_invoice_merge_log_4cea6a7.py',
+                       ['consolidate_pos_invoices'],namespace)
+        self.doc.docstatus=1
+        namespace['consolidate_pos_invoices'](closing_entry=self.doc)
+        self.assertEqual(len(queued),1)
+        self.assertEqual(self.doc.status,'Queued')
+        self.assertEqual(self.opening.status,'Open')
+        self.existing_closings.append(copy.deepcopy(self.doc))
+        other=copy.deepcopy(self.doc);other.name='CLOSE-2';other.docstatus=0
+        with self.assertRaisesRegex(Refused,'existing closing'):self.populate(other)
+    def test_other_draft_and_failed_closings_block_but_current_and_cancelled_do_not(self):
+        for status,state in [(0,'Draft'),(1,'Failed'),(1,'Submitted')]:
+            self.existing_closings=[Doc(name='OTHER',pos_opening_entry='OPEN-1',
+                                       docstatus=status,status=state)]
+            with self.assertRaisesRegex(Refused,'existing closing'):self.populate(self.doc)
+        for other in [Doc(name='CLOSE-1',pos_opening_entry='OPEN-1',docstatus=0),
+                      Doc(name='OLD-CANCELLED',pos_opening_entry='OPEN-1',docstatus=2)]:
+            self.existing_closings=[other]
+            self.populate(self.doc)
     def test_second_closing_of_closed_opening_refused(self):
         self.populate(self.doc)
         self.opening.status='Closed'
