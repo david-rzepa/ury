@@ -1,0 +1,32 @@
+name: Opening currency unit regressions
+on:
+  push:
+    branches: [fix/opening-warning-currency]
+  pull_request:
+    branches: [staging-fa1aca8a]
+    paths:
+      - pos/src/components/POSOpeningScreen.tsx
+      - pos/src/lib/opening-currency*
+      - pos/src/i18n/locales/*.json
+      - .github/workflows/opening-currency-unit.yml
+permissions: {}
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the exact public source commit without credentials
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git init --quiet
+          git remote add origin "https://github.com/${SOURCE_REPOSITORY}.git"
+          git fetch --quiet --depth=1 origin "$SOURCE_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.8.1'
+      - name: Run pure currency formatting and translation regressions
+        run: node --test pos/src/lib/opening-currency.test.mjs
