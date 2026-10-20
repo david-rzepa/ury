@@ -1,0 +1,35 @@
+name: Combined staging regressions
+on:
+  push:
+    branches: [staging-fa1aca8a, verify/four-staging-fixes]
+  pull_request:
+    branches: [staging-fa1aca8a]
+permissions: {}
+jobs:
+  combined:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the exact public source commit without credentials
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git init --quiet
+          git remote add origin "https://github.com/${SOURCE_REPOSITORY}.git"
+          git fetch --quiet --depth=1 origin "$SOURCE_SHA"
+          git checkout --quiet --detach FETCH_HEAD
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.8.1'
+      - name: Test native cancellation boundaries
+        run: python3 -B -m unittest discover -s ury/ury/doctype/ury_order -p test_cancel_order_workflow_unit.py
+      - name: Test authoritative closing and consolidation dispatch
+        run: python3 -B -m unittest discover -s tests -p test_server_closing_unit.py
+      - name: Test currency formatting and translations
+        run: node --test pos/src/lib/opening-currency.test.mjs
+      - name: Compile both changed screens with imports external
+        run: |
+          npx --yes esbuild@0.25.0 pos/src/captain/pages/CaptainOrder.tsx --bundle --external:* --format=esm --outfile="$RUNNER_TEMP/CaptainOrder.js"
+          npx --yes esbuild@0.25.0 pos/src/components/POSOpeningScreen.tsx --bundle --external:* --format=esm --outfile="$RUNNER_TEMP/POSOpeningScreen.js"
